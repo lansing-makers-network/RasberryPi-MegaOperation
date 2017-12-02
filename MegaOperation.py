@@ -1,10 +1,11 @@
 #!/usr/bin/env python2
 
 # python standard libraries
-import __main__, os, pprint, configparser, argparse, logging, logging.handlers, time
+import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time
 
 # Raspberry Pi specific libraries
-import pigpio
+import pigpio, pygame, MPR121
+#import RPi.GPIO as GPIO
 
 # Setup format for pprint.
 pp = pprint.PrettyPrinter(indent=4)
@@ -89,12 +90,42 @@ first_sections_first_item = first_section_dict.keys()[0]
 logger.log(logging.DEBUG-4, "config["+first_section_key+"]["+first_sections_first_item+"] = " + config[first_section_key][first_sections_first_item])
 logger.log(logging.DEBUG-4, "config = " + pp.pformat(config))
 
+# handle ctrl+c gracefully
+def signal_handler(signal, frame):
+  logger.info(u'Exiting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
+  sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+
 # initialize and connect to Pi GPIO daemon. 
 pi = pigpio.pi()
 if not pi.connected:
   logger.critical(u'Unable to connect to TCP Pi GPIO Daemon')
-  exit(0)
+  sys.exit(1)
+else:
+  logger.info(u'Connection to pigpio daemon successfully established')
 
+# Connect to and initialize the PiCap's MPR121 hardware. 
+try:
+  sensor = MPR121.begin()
+  logger.info(u'MPR121 successfully initialized')
+except Exception as e:
+  logger.critical(u'Unable to connect to initial the MPR121 on the PiCap')
+  logger.critical(e)
+  sys.exit(1)
+
+num_electrodes = 12
+
+# this is the touch threshold - setting it low makes it more like a proximity trigger default value is 40 for touch
+touch_threshold = 40
+
+# this is the release threshold - must ALWAYS be smaller than the touch threshold default value is 20 for touch
+release_threshold = 20
+
+# set the thresholds
+sensor.set_touch_threshold(touch_threshold)
+sensor.set_release_threshold(release_threshold)
+  
 # define Big Dome pins
 BIG_DOME_LED_PIN = 25
 BIG_DOME_PUSHBUTTON_PIN = 24
@@ -107,17 +138,41 @@ pi.set_mode(BIG_DOME_PUSHBUTTON_PIN, pigpio.INPUT)
 pi.set_pull_up_down(BIG_DOME_PUSHBUTTON_PIN, pigpio.PUD_UP)
 pi.set_glitch_filter(BIG_DOME_PUSHBUTTON_PIN, 1000)
 
+big_dome_led = 0
+pi.write(BIG_DOME_LED_PIN, big_dome_led)
+
+prv_button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
+
 if args.stop : 
   logger.info(u'Option set to just initialize and then quit')
   quit()
+  
+while True:
 
-while (1):
-    logger.debug( u"pi.read(BIG_DOME_PUSHBUTTON_PIN) = " + unicode(pi.read(BIG_DOME_PUSHBUTTON_PIN)) )
+  # check if a sensor changed
+  if sensor.touch_status_changed():
+    sensor.update_touch_data()
+    is_any_touch_registered = False
 
-    logger.debug( u"pi.write(BIG_DOME_LED_PIN) -> off" )
-    pi.write(BIG_DOME_LED_PIN, 0) # set local Pi's GPIO 4 low
-    time.sleep(0.5)
+    # scan each of the sensors to see which one changed.
+    for i in range(num_electrodes):
+      if sensor.get_touch_data(i):
+        # check if touch is registred to set the led status
+        is_any_touch_registered = True
+      if sensor.is_new_touch(i):
+        # play sound associated with that touch
+        logger.info("detected sensor  = " + str(i))
 
-    logger.debug( u"pi.write(BIG_DOME_LED_PIN) -> on" )
-    pi.write(BIG_DOME_LED_PIN, 1) # set local Pi's GPIO 4 low
-    time.sleep(0.5)
+    if is_any_touch_registered:
+      pi.write(BIG_DOME_LED_PIN, not(pi.read(BIG_DOME_LED_PIN)))
+    else:
+      pi.write(BIG_DOME_LED_PIN, not(pi.read(BIG_DOME_LED_PIN)))
+
+  button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
+  if (prv_button != button) :
+    logger.info("BIG_DOME_PUSHBUTTON_PIN changed from " + str(prv_button) + " to " + str(button))
+    pi.write(BIG_DOME_LED_PIN, not(button))
+    prv_button = button
+  
+  time.sleep(0.01)
+
