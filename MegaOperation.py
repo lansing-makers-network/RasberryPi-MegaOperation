@@ -16,11 +16,14 @@ fn = os.path.splitext(os.path.basename(__main__.__file__))[0]
 # Define command line arguments
 parser = argparse.ArgumentParser(description='Raspberry Pi MegaOperation board game.')
 parser.add_argument('--verbose', '-v', action='count', help='verbose multi level', default=1)
-parser.add_argument('--config', '-c', help='specify config file', default=(fn + ".ini"))
+parser.add_argument('--config', '-c', help='specify config file', default=(os.path.join(os.path.dirname(os.path.realpath(__file__)), fn + ".ini")))
 parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
 
 # Read in and parse the command line arguments
 args = parser.parse_args()
+
+os.path.join(os.path.dirname(os.path.realpath(__file__)), args.config)
+
 
 # Read in configuration file and create dictionary object
 configParse = configparser.ConfigParser()
@@ -60,7 +63,7 @@ except:
     logger.setLevel(logging.DEBUG)
 
 logger.info(u'Starting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
-logger.info(u'config file = ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), args.config))
+logger.info(u'config file = ' + args.config)
     
 # log which levels of debug are enabled.
 logger.log(logging.DEBUG-9, "discrete log level = " + str(logging.DEBUG-9))
@@ -88,7 +91,7 @@ first_section_dict = config[first_section_key]
 logger.log(logging.DEBUG-3, "list of first sections items = \r\n" + pp.pformat(first_section_dict))
 first_sections_first_item = first_section_dict.keys()[0]
 logger.log(logging.DEBUG-4, "config["+first_section_key+"]["+first_sections_first_item+"] = " + config[first_section_key][first_sections_first_item])
-logger.log(logging.DEBUG-4, "config = " + pp.pformat(config))
+logger.log(logging.DEBUG-5, "config = " + pp.pformat(config))
 
 # handle ctrl+c gracefully
 def signal_handler(signal, frame):
@@ -143,6 +146,9 @@ pi.write(BIG_DOME_LED_PIN, big_dome_led)
 
 prv_button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
 
+print "config[Butterflies in Stomach][sensor] = " + config["Butterflies in Stomach"]['sensor']
+
+
 if args.stop : 
   logger.info(u'Option set to just initialize and then quit')
   quit()
@@ -155,7 +161,10 @@ while True:
     is_any_touch_registered = False
 
     # scan each of the sensors to see which one changed.
-    for i in range(num_electrodes):
+    #for i in range(num_electrodes):
+    for key in config.iterkeys():
+      logger.log(logging.DEBUG-1, "config[" + key + "]['sensor'] = " + str(config[key]['sensor']))
+      i = int(config[key]['sensor'])
       if sensor.get_touch_data(i):
         # check if touch is registred to set the led status
         is_any_touch_registered = True
@@ -163,6 +172,15 @@ while True:
         # play sound associated with that touch
         logger.info("detected sensor  = " + str(i))
 
+      if sensor.is_new_touch(i):
+        print "electrode {0} was just touched".format(i)
+      elif sensor.is_new_release(i):
+        print "electrode {0} was just released".format(i)
+        
+        
+        
+        
+        
     if is_any_touch_registered:
       pi.write(BIG_DOME_LED_PIN, not(pi.read(BIG_DOME_LED_PIN)))
     else:
