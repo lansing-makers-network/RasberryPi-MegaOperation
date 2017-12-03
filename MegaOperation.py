@@ -17,6 +17,7 @@ fn = os.path.splitext(os.path.basename(__main__.__file__))[0]
 parser = argparse.ArgumentParser(description='Raspberry Pi MegaOperation board game.')
 parser.add_argument('--verbose', '-v', action='count', help='verbose multi level', default=1)
 parser.add_argument('--config', '-c', help='specify config file', default=(os.path.join(os.path.dirname(os.path.realpath(__file__)), fn + ".ini")))
+parser.add_argument('--ws281x', '-w', help='specify ws281x file handle', default="/dev/ws281x")
 parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
 
 # Read in and parse the command line arguments
@@ -64,6 +65,7 @@ except:
 
 logger.info(u'Starting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
 logger.info(u'config file = ' + args.config)
+logger.info(u'ws281x file handle = ' + args.ws281x)
     
 # log which levels of debug are enabled.
 logger.log(logging.DEBUG-9, "discrete log level = " + str(logging.DEBUG-9))
@@ -95,6 +97,9 @@ logger.log(logging.DEBUG-5, "config = " + pp.pformat(config))
 
 # handle ctrl+c gracefully
 def signal_handler(signal, frame):
+  logger.debug("CTRL+C Exit LED test of ALL off")
+  write_ws281x('fill 2,'+colors['off']+'\nrender\n')
+
   logger.info(u'Exiting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
   sys.exit(0)
 
@@ -146,9 +151,48 @@ pi.write(BIG_DOME_LED_PIN, big_dome_led)
 
 prv_button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
 
-print "config[Butterflies in Stomach][sensor] = " + config["Butterflies in Stomach"]['sensor']
+neopixel_fn = args.ws281x
+channel = 2
+led_count = 14
+led_type = 1
+invert = 0
+global_brightness = 255
+gpionum = 13
 
+colors = { 'off' : '000000',
+           'red' : 'FF0000',
+           'grn' : '00FF00',
+           'blu' : '0000FF',
+           'ylw' : 'FFFF00',
+           'brw' : '7F2805',
+           'prp' : 'B54A8F'
+         }
+         
+def write_ws281x(cmd):
+  with open(neopixel_fn, 'w') as the_file:
+    logger.debug("ws281x cmd: " + cmd.replace("\n", "\\n"))
+    the_file.write(cmd)
+    # file closes with unindent.
+    # close needed for ws2812svr to process file handle
+         
+logger.debug("initializing ws2812svr")
+write_ws281x('setup {0},{1},{2},{3},{4},{5}\ninit\n'.format(channel, led_count, led_type, invert, global_brightness, gpionum))
 
+logger.debug("POST LED test of ALL red")
+write_ws281x('fill 2,'+colors['red']+'\nrender\n')
+time.sleep(1)
+
+logger.debug("POST LED test of ALL grn")
+write_ws281x('fill 2,'+colors['grn']+'\nrender\n')
+time.sleep(1)
+
+logger.debug("POST LED test of ALL blu")
+write_ws281x('fill 2,'+colors['blu']+'\nrender\n')
+time.sleep(1)
+
+logger.debug("POST LED test of ALL off")
+write_ws281x('fill 2,'+colors['off']+'\nrender\n')
+    
 if args.stop : 
   logger.info(u'Option set to just initialize and then quit')
   quit()
