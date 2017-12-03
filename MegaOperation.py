@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 # python standard libraries
-import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time
+import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time, threading
 
 # Raspberry Pi specific libraries
 import pigpio, pygame, MPR121
@@ -19,6 +19,7 @@ parser.add_argument('--verbose', '-v', action='count', help='verbose multi level
 parser.add_argument('--config', '-c', help='specify config file', default=(os.path.join(os.path.dirname(os.path.realpath(__file__)), fn + ".ini")))
 parser.add_argument('--ws281x', '-w', help='specify ws281x file handle', default="/dev/ws281x")
 parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
+parser.add_argument('--postDelay', '-p', help='specify the LED delays at startup', type=float, default="1.0")
 
 # Read in and parse the command line arguments
 args = parser.parse_args()
@@ -66,7 +67,8 @@ except:
 logger.info(u'Starting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
 logger.info(u'config file = ' + args.config)
 logger.info(u'ws281x file handle = ' + args.ws281x)
-    
+logger.info(u'POST Delays = ' + str(args.postDelay) + " seconds")
+
 # log which levels of debug are enabled.
 logger.log(logging.DEBUG-9, "discrete log level = " + str(logging.DEBUG-9))
 logger.log(logging.DEBUG-8, "discrete log level = " + str(logging.DEBUG-8))
@@ -97,15 +99,19 @@ logger.log(logging.DEBUG-5, "config = " + pp.pformat(config))
 
 # handle ctrl+c gracefully
 def signal_handler(signal, frame):
-  logger.debug("CTRL+C Exit LED test of ALL off")
+  logger.info("CTRL+C Exit LED test of ALL off")
   write_ws281x('fill 2,'+colors['off']+'\nrender\n')
 
   logger.info(u'Exiting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
+  for section in config.iterkeys():
+    if config[section]['timer'].is_alive():
+      logger.info("waiting for thread : " + config[section]['timer'].getName() + " to end")
+
   sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# initialize and connect to Pi GPIO daemon. 
+# initialize and connect to Pi GPIO daemon.
 pi = pigpio.pi()
 if not pi.connected:
   logger.critical(u'Unable to connect to TCP Pi GPIO Daemon')
@@ -113,7 +119,7 @@ if not pi.connected:
 else:
   logger.info(u'Connection to pigpio daemon successfully established')
 
-# Connect to and initialize the PiCap's MPR121 hardware. 
+# Connect to and initialize the PiCap's MPR121 hardware.
 try:
   sensor = MPR121.begin()
   logger.info(u'MPR121 successfully initialized')
@@ -121,8 +127,6 @@ except Exception as e:
   logger.critical(u'Unable to connect to initial the MPR121 on the PiCap')
   logger.critical(e)
   sys.exit(1)
-
-num_electrodes = 12
 
 # this is the touch threshold - setting it low makes it more like a proximity trigger default value is 40 for touch
 touch_threshold = 40
@@ -133,7 +137,7 @@ release_threshold = 20
 # set the thresholds
 sensor.set_touch_threshold(touch_threshold)
 sensor.set_release_threshold(release_threshold)
-  
+
 # define Big Dome pins
 BIG_DOME_LED_PIN = 25
 BIG_DOME_PUSHBUTTON_PIN = 24
@@ -158,7 +162,6 @@ led_type = 1
 invert = 0
 global_brightness = 255
 gpionum = 13
-
 colors = { 'off' : '000000',
            'red' : 'FF0000',
            'grn' : '00FF00',
@@ -167,74 +170,87 @@ colors = { 'off' : '000000',
            'brw' : '7F2805',
            'prp' : 'B54A8F'
          }
-         
+
 def write_ws281x(cmd):
   with open(neopixel_fn, 'w') as the_file:
     logger.debug("ws281x cmd: " + cmd.replace("\n", "\\n"))
     the_file.write(cmd)
     # file closes with unindent.
     # close needed for ws2812svr to process file handle
-         
+
 logger.debug("initializing ws2812svr")
 write_ws281x('setup {0},{1},{2},{3},{4},{5}\ninit\n'.format(channel, led_count, led_type, invert, global_brightness, gpionum))
 
 logger.debug("POST LED test of ALL red")
 write_ws281x('fill 2,'+colors['red']+'\nrender\n')
-time.sleep(1)
+time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL grn")
 write_ws281x('fill 2,'+colors['grn']+'\nrender\n')
-time.sleep(1)
+time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL blu")
 write_ws281x('fill 2,'+colors['blu']+'\nrender\n')
-time.sleep(1)
+time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL off")
 write_ws281x('fill 2,'+colors['off']+'\nrender\n')
-    
-if args.stop : 
+
+def sectionWorker(num = 20):
+  print "started name " + threading.currentThread().getName() + " sensorNum = " + str(num)
+  time.sleep(int(num))
+  print "stopping name " + threading.currentThread().getName() + " sensorNum = " + str(num)
+
+# initialize un-used timers for isAlive in main loop, later.
+for section in config.iterkeys():
+  config[section]['timer'] = threading.Thread(target=sectionWorker, args=(config[section]['led_on_time'],))
+
+# stop if command line requested.
+if args.stop :
   logger.info(u'Option set to just initialize and then quit')
   quit()
-  
+
+# Main Loop
 while True:
 
   # check if a sensor changed
   if sensor.touch_status_changed():
     sensor.update_touch_data()
-    is_any_touch_registered = False
 
     # scan each of the sensors to see which one changed.
-    #for i in range(num_electrodes):
-    for key in config.iterkeys():
-      logger.log(logging.DEBUG-1, "config[" + key + "]['sensor'] = " + str(config[key]['sensor']))
-      i = int(config[key]['sensor'])
-      if sensor.get_touch_data(i):
+    for section in config.iterkeys():
+      logger.log(logging.DEBUG-1, "config[" + section + "]['sensor'] = " + str(config[section]['sensor']))
+      i = int(config[section]['sensor'])
+      # if sensor.get_touch_data(i):
         # check if touch is registred to set the led status
-        is_any_touch_registered = True
       if sensor.is_new_touch(i):
         # play sound associated with that touch
         logger.info("detected sensor  = " + str(i))
+        if not config[section]['timer'].is_alive():
+          config[section]['timer'] = threading.Thread(target=sectionWorker, args=(config[section]['led_on_time'],))
+          config[section]['timer'].setName(section)
+          config[section]['timer'].start()
 
       if sensor.is_new_touch(i):
-        print "electrode {0} was just touched".format(i)
+        logging.info("electrode {0} was just touched".format(i))
       elif sensor.is_new_release(i):
-        print "electrode {0} was just released".format(i)
-        
-        
-        
-        
-        
-    if is_any_touch_registered:
-      pi.write(BIG_DOME_LED_PIN, not(pi.read(BIG_DOME_LED_PIN)))
-    else:
-      pi.write(BIG_DOME_LED_PIN, not(pi.read(BIG_DOME_LED_PIN)))
+        logging.info("electrode {0} was just released".format(i))
+
+  is_any_sensor_timing = False
+  for section in config.iterkeys():
+    if config[section]['timer'].is_alive():
+      is_any_sensor_timing = True
 
   button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
+  if (is_any_sensor_timing or not(button)):
+    pi.write(BIG_DOME_LED_PIN, 1)
+  else:
+    pi.write(BIG_DOME_LED_PIN, 0)
+
   if (prv_button != button) :
     logger.info("BIG_DOME_PUSHBUTTON_PIN changed from " + str(prv_button) + " to " + str(button))
     pi.write(BIG_DOME_LED_PIN, not(button))
     prv_button = button
-  
-  time.sleep(0.01)
 
+  time.sleep(0.01)
+#end of Main Loop
