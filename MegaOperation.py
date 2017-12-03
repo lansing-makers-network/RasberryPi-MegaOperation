@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 # python standard libraries
-import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time, threading
+import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time, threading, random, copy
 
 # Raspberry Pi specific libraries
 import pigpio, pygame, MPR121
@@ -100,7 +100,7 @@ logger.log(logging.DEBUG-5, "config = " + pp.pformat(config))
 # handle ctrl+c gracefully
 def signal_handler(signal, frame):
   logger.info("CTRL+C Exit LED test of ALL off")
-  write_ws281x('fill 2,'+colors['off']+'\nrender\n')
+  write_ws281x('fill ' + str(channel) + ',' + colors['off'] + '\nrender\n')
 
   logger.info(u'Exiting script ' + os.path.join(os.path.dirname(os.path.realpath(__file__)), __file__))
   for section in config.iterkeys():
@@ -182,28 +182,58 @@ logger.debug("initializing ws2812svr")
 write_ws281x('setup {0},{1},{2},{3},{4},{5}\ninit\n'.format(channel, led_count, led_type, invert, global_brightness, gpionum))
 
 logger.debug("POST LED test of ALL red")
-write_ws281x('fill 2,'+colors['red']+'\nrender\n')
+write_ws281x('fill ' + str(channel) + ',' + colors['red'] + '\nrender\n')
 time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL grn")
-write_ws281x('fill 2,'+colors['grn']+'\nrender\n')
+write_ws281x('fill ' + str(channel) + ',' + colors['grn'] + '\nrender\n')
 time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL blu")
-write_ws281x('fill 2,'+colors['blu']+'\nrender\n')
+write_ws281x('fill ' + str(channel) + ',' + colors['blu'] + '\nrender\n')
 time.sleep(args.postDelay)
 
 logger.debug("POST LED test of ALL off")
-write_ws281x('fill 2,'+colors['off']+'\nrender\n')
+write_ws281x('fill ' + str(channel) + ',' + colors['off'] + '\nrender\n')
 
-def sectionWorker(num = 20):
-  print "started name " + threading.currentThread().getName() + " sensorNum = " + str(num)
-  time.sleep(int(num))
-  print "stopping name " + threading.currentThread().getName() + " sensorNum = " + str(num)
+def sectionWorker(num = -1):
+  section = threading.currentThread().getName()
+  
+  logger.debug('Started Thread "' + section + \
+               '" led_on_time = ' + str(config[section]['led_on_time']) + \
+               '" led_start = ' + str(config[section]['led_start']) + \
+               '" led_length = ' + str(config[section]['led_length']) \
+               )
+               
+  tmp_color = copy.deepcopy(colors)
+  if 'off' in tmp_color: del tmp_color['off']
+  if config[section]['led_color'].lower() == 'random' :
+    # remove 'off', as not to get randomly
+    color = tmp_color[random.choice(list(tmp_color))]
+  else:
+    try:
+      color = tmp_color[config[section]['led_color'].lower()]
+    except:
+      color = tmp_color[random.choice(list(tmp_color))]
+
+  write_ws281x('fill ' + str(channel) + ',' + \
+                         color  + ',' + \
+                         str(config[section]['led_start']) + ',' + \
+                         str(config[section]['led_length']) + \
+                         '\nrender\n')
+
+  time.sleep(int(config[section]['led_on_time']))
+  
+  write_ws281x('fill ' + str(channel) + ',' + \
+                         colors['off'] + ',' + \
+                         str(config[section]['led_start']) + ',' + \
+                         str(config[section]['led_length']) + \
+                         '\nrender\n')
+# end of sectionWorker()
 
 # initialize un-used timers for isAlive in main loop, later.
 for section in config.iterkeys():
-  config[section]['timer'] = threading.Thread(target=sectionWorker, args=(config[section]['led_on_time'],))
+  config[section]['timer'] = threading.Thread(target=sectionWorker, args=(config[section]['sensor'],))
 
 # stop if command line requested.
 if args.stop :
@@ -225,24 +255,19 @@ while True:
         # check if touch is registred to set the led status
       if sensor.is_new_touch(i):
         # play sound associated with that touch
-        logger.info("detected sensor  = " + str(i))
+        logging.info("electrode {0} was just touched".format(i))
         if not config[section]['timer'].is_alive():
           config[section]['timer'] = threading.Thread(target=sectionWorker, args=(config[section]['led_on_time'],))
           config[section]['timer'].setName(section)
           config[section]['timer'].start()
 
-      if sensor.is_new_touch(i):
-        logging.info("electrode {0} was just touched".format(i))
       elif sensor.is_new_release(i):
         logging.info("electrode {0} was just released".format(i))
 
-  is_any_sensor_timing = False
-  for section in config.iterkeys():
-    if config[section]['timer'].is_alive():
-      is_any_sensor_timing = True
+  is_any_sensor_thread_alive = any(config[section]['timer'].is_alive() for section in config.iterkeys() )
 
   button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
-  if (is_any_sensor_timing or not(button)):
+  if (is_any_sensor_thread_alive or not(button)):
     pi.write(BIG_DOME_LED_PIN, 1)
   else:
     pi.write(BIG_DOME_LED_PIN, 0)
