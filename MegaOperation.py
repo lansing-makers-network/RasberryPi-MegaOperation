@@ -4,8 +4,8 @@
 import __main__, sys, os, signal, pprint, configparser, argparse, logging, logging.handlers, time, threading, random, copy, pygame
 
 # Raspberry Pi specific libraries
-import pigpio, MPR121
-#import RPi.GPIO as GPIO # different library not used.
+import MPR121
+import RPi.GPIO as GPIO
 
 #### Global Variables ####
 
@@ -36,30 +36,24 @@ args = None
 config = None
 pi = None
 sensor = None
+prv_button = None
 
 def setup_gpio():
   global pi
   global prv_button
-  
-  #### initialize and connect to Pi GPIO daemon.
-  pi = pigpio.pi()
-  if not pi.connected:
-    logger.critical(u'Unable to connect to TCP Pi GPIO Daemon')
-    sys.exit(1)
-  else:
-    logger.info(u'Connection to pigpio daemon successfully established')
 
+  #### initialize Pi GPIO
+  GPIO.setmode(GPIO.BCM)
+  GPIO.setwarnings(False)
+  
   # initialize the GPIO on the Pi Proto Board
   # Big Dome LED
-  pi.set_mode(BIG_DOME_LED_PIN, pigpio.OUTPUT)
-  # Big Dome Button
-  pi.set_mode(BIG_DOME_PUSHBUTTON_PIN, pigpio.INPUT)
-  pi.set_pull_up_down(BIG_DOME_PUSHBUTTON_PIN, pigpio.PUD_UP)
-  pi.set_glitch_filter(BIG_DOME_PUSHBUTTON_PIN, 1000)
-
   big_dome_led = 0
-  pi.write(BIG_DOME_LED_PIN, big_dome_led)
-  prv_button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
+  GPIO.setup(BIG_DOME_LED_PIN, GPIO.OUT)
+  GPIO.output(BIG_DOME_LED_PIN, big_dome_led)
+
+  # Big Dome Button
+  GPIO.setup(BIG_DOME_PUSHBUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 def setup_mpr121():
   global sensor
@@ -157,15 +151,15 @@ def main():
 
     is_any_sensor_thread_alive = any(config[section]['thread'].is_alive() for section in config.iterkeys() )
 
-    button = pi.read(BIG_DOME_PUSHBUTTON_PIN)
+    button = GPIO.input(BIG_DOME_PUSHBUTTON_PIN)
     if (is_any_sensor_thread_alive or not(button)):
-      pi.write(BIG_DOME_LED_PIN, 1)
+      GPIO.output(BIG_DOME_LED_PIN, 1)
     else:
-      pi.write(BIG_DOME_LED_PIN, 0)
+      GPIO.output(BIG_DOME_LED_PIN, 0)
 
     if (prv_button != button) :
       logger.info("BIG_DOME_PUSHBUTTON_PIN changed from " + str(prv_button) + " to " + str(button))
-      pi.write(BIG_DOME_LED_PIN, not(button))
+      GPIO.output(BIG_DOME_LED_PIN, not(button))
       prv_button = button
 
     time.sleep(0.01)
