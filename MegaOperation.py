@@ -92,7 +92,15 @@ def main():
   setupLogging()
   setup_gpio()
   setup_mpr121()
+  
+  # initialize mixer and pygame
+  pygame.mixer.pre_init(frequency = 44100/4, channels = 64, buffer = 1024)
+  pygame.init()
 
+
+  sound = pygame.mixer.Sound('/home/pi/MegaOperation/sounds/.wavs/buzzer.wav')
+  sound.play()
+  # initialize CTRL-C Exit handler
   signal.signal(signal.SIGINT, signal_handler)
 
   #### POST - NeoPixel Pre Operating Self Tests ####
@@ -277,7 +285,8 @@ def sectionWorker(num = -1):
   logger.debug('Started Thread "' + section + \
                '" led_on_time = ' + str(config[section]['led_on_time']) + \
                '" led_start = ' + str(config[section]['led_start']) + \
-               '" led_length = ' + str(config[section]['led_length']) \
+               '" led_length = ' + str(config[section]['led_length']) + \
+               '" music_fnpath = ' + str(config[section]['music_fnpath']) \
                )
                
   tmp_color = copy.deepcopy(colors)
@@ -297,6 +306,9 @@ def sectionWorker(num = -1):
                          str(config[section]['led_length']) + \
                          '\nrender\n')
 
+  sound = pygame.mixer.Sound(config[section]['music_fnpath'])
+  sound.play()
+  
   time.sleep(int(config[section]['led_on_time']))
   
   write_ws281x('fill ' + str(channel) + ',' + \
