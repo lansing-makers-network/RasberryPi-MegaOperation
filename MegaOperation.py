@@ -81,6 +81,7 @@ def main():
   global pi
   global prv_button
   global sensor
+  global led_count
   
   ParseArgs()
   setupLogging()
@@ -128,6 +129,10 @@ def main():
   logger.debug("POST LED test of ALL off")
   write_ws281x('fill ' + str(channel) + ',' + colors['off'] + '\nrender\n')
 
+  #### used to locate LEDs on device
+  if args.walkLED:
+    walk_leds()
+  
   #### stop if command line requested.
   if args.stop :
     logger.info(u'Option set to just initialize and then quit')
@@ -173,6 +178,25 @@ def main():
     time.sleep(0.01)
 #end of main():
 
+def walk_leds():
+  global led_count
+  for pos in range(led_count):
+    write_ws281x('fill ' + str(channel) + ',' + \
+                           colors['red']  + ',' + \
+                           str(pos) + ',' + \
+                           '1' + \
+                           '\nrender\n')
+    logger.debug(u'LED Index = ' + str(pos))
+
+    try:
+        input("Press enter to continue")
+    except SyntaxError:
+        pass
+    
+    write_ws281x('fill ' + str(channel) + ',' + colors['off'] + '\nrender\n')
+    pos = pos + 1
+  exit()
+
 def ParseArgs():
   global args
   global config
@@ -188,6 +212,7 @@ def ParseArgs():
   parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
   parser.add_argument('--postDelay', '-p', help='specify the LED delays at startup', type=float, default="1.0")
   parser.add_argument('--noSound', '-n', action='store_true', help='Run with out sound')
+  parser.add_argument('--walkLED', '-L', action='store_true', help='move LED increamentally, with standard input, used for determining LED positions.')
 
   # Read in and parse the command line arguments
   args = parser.parse_args()
