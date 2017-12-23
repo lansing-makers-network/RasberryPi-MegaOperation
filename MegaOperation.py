@@ -11,7 +11,7 @@ import RPi.GPIO as GPIO
 
 # ws2812svr constants
 channel = 2
-led_count = 14
+led_count = 0 # will be calculated later, from the INI file
 led_type = 1
 invert = 0
 global_brightness = 255
@@ -88,14 +88,26 @@ def main():
   setup_mpr121()
   
   # initialize mixer and pygame
-  pygame.mixer.pre_init(frequency = 44100/4, channels = 64, buffer = 1024)
-  pygame.init()
+  if not args.noSound:
+    pygame.mixer.pre_init(frequency = 44100/4, channels = 64, buffer = 1024)
+    pygame.init()
 
+    sound = pygame.mixer.Sound('/home/pi/MegaOperation/sounds/.wavs/buzzer.wav')
+    sound.play()
 
-  sound = pygame.mixer.Sound('/home/pi/MegaOperation/sounds/.wavs/buzzer.wav')
-  sound.play()
   # initialize CTRL-C Exit handler
   signal.signal(signal.SIGINT, signal_handler)
+
+  # pre-initialize not yet used timer threads into config object for testing, later in main loop.
+  # and determine maximum LED position
+  led_count = 0
+  for section in config.iterkeys():
+    config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section]['sensor'],))
+
+    maxTemp = int(config[section]['led_start']) + int(config[section]['led_length'])
+    if maxTemp > led_count:
+      led_count = maxTemp
+  logger.debug("Max LED position found to be " + str(led_count))
 
   #### POST - NeoPixel Pre Operating Self Tests ####
   logger.debug("initializing ws2812svr")
@@ -115,10 +127,6 @@ def main():
 
   logger.debug("POST LED test of ALL off")
   write_ws281x('fill ' + str(channel) + ',' + colors['off'] + '\nrender\n')
-
-  # pre-initialize not yet used timer threads into config object for testing, later in main loop.
-  for section in config.iterkeys():
-    config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section]['sensor'],))
 
   #### stop if command line requested.
   if args.stop :
@@ -179,6 +187,7 @@ def ParseArgs():
   parser.add_argument('--ws281x', '-w', help='specify ws281x file handle', default="/dev/ws281x")
   parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
   parser.add_argument('--postDelay', '-p', help='specify the LED delays at startup', type=float, default="1.0")
+  parser.add_argument('--noSound', '-n', action='store_true', help='Run with out sound')
 
   # Read in and parse the command line arguments
   args = parser.parse_args()
@@ -300,8 +309,9 @@ def sectionWorker(num = -1):
                          str(config[section]['led_length']) + \
                          '\nrender\n')
 
-  sound = pygame.mixer.Sound(config[section]['music_fnpath'])
-  sound.play()
+  if not args.noSound:
+    sound = pygame.mixer.Sound(config[section]['music_fnpath'])
+    sound.play()
   
   time.sleep(int(config[section]['led_on_time']))
   
