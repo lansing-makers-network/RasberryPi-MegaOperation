@@ -37,11 +37,9 @@ args = None
 config = None
 pi = None
 sensor = None
-prv_button = None
 
 def setup_gpio():
   global pi
-  global prv_button
 
   #### initialize Pi GPIO
   GPIO.setmode(GPIO.BCM)
@@ -80,9 +78,13 @@ def setup_mpr121():
   
 def main():
   global pi
-  global prv_button
   global sensor
   global led_count
+  button = False
+  prv_button = False
+  current_Nose_LED = False
+  prv_Nose_LED = False
+
   
   ParseArgs()
   setupLogging()
@@ -170,27 +172,25 @@ def main():
     is_any_sensor_thread_alive = any(config[section]['thread'].is_alive() for section in config.iterkeys() )
 
     button = GPIO.input(BIG_DOME_PUSHBUTTON_PIN)
-    if (is_any_sensor_thread_alive or not(button)):
-      GPIO.output(BIG_DOME_LED_PIN, 1)
-    else:
-      GPIO.output(BIG_DOME_LED_PIN, 0)
-
     if (prv_button != button) :
       logger.info("BIG_DOME_PUSHBUTTON_PIN changed from " + str(prv_button) + " to " + str(button))
-      GPIO.output(BIG_DOME_LED_PIN, not(button))
       prv_button = button
-      if not button:
+
+    current_Nose_LED = is_any_sensor_thread_alive or not(button)
+    if current_Nose_LED != prv_Nose_LED:
+      if current_Nose_LED:
         write_ws281x('fill ' + str(channel) + ',' + \
-                               colors['wht']  + ',' + \
-                               str(config['Nose']['led_start']) + ',' + \
-                               str(config['Nose']['led_length']) + \
-                               '\nrender\n')
+        colors['wht']  + ',' + \
+        str(config['Nose']['led_start']) + ',' + \
+        str(config['Nose']['led_length']) + \
+        '\nrender\n')
       else:
         write_ws281x('fill ' + str(channel) + ',' + \
-                               colors['off']  + ',' + \
-                               str(config['Nose']['led_start']) + ',' + \
-                               str(config['Nose']['led_length']) + \
-                               '\nrender\n')
+        colors['off']  + ',' + \
+        str(config['Nose']['led_start']) + ',' + \
+        str(config['Nose']['led_length']) + \
+        '\nrender\n')
+      prv_Nose_LED = current_Nose_LED
 
     time.sleep(0.01)
 #end of main():
