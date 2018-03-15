@@ -354,11 +354,8 @@ def sectionWorker(config):
   if (not args.noSound) and ('music_fnpath' in config) and (os.path.isfile(config['music_fnpath'])):
     # only play if allowed and valid file is defined.
     sound = pygame.mixer.Sound(config['music_fnpath'])
-    if not pygame.mixer.get_busy():
-      # play when no other is playing.
-      sound.play()
-    elif not args.singleSound:
-      # only play if multi is allowed.
+    if (not pygame.mixer.get_busy()) or (not args.singleSound):
+      # play when no other is playing or play blindly if multi is allowed.
       sound.play()
 
   time.sleep(int(config['led_on_time']))
