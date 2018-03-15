@@ -27,7 +27,8 @@ colors = { 'off' : '000000',
            'blu' : '0000FF',
            'ylw' : 'FFFF00',
            'brw' : '7F2805',
-           'prp' : 'B54A8F'
+           'prp' : 'B54A8F',
+           'wht' : 'FFFFFF'
          }
 
 pp = pprint.PrettyPrinter(indent=4) # Setup format for pprint.
@@ -103,7 +104,7 @@ def main():
   # and determine maximum LED position
   led_count = 0
   for section in config.iterkeys():
-    config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section]['sensor'],))
+    config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section],))
 
     maxTemp = int(config[section]['led_start']) + int(config[section]['led_length'])
     if maxTemp > led_count:
@@ -148,19 +149,23 @@ def main():
       # scan each of the sensors to see which one changed.
       for section in config.iterkeys():
         logger.log(logging.DEBUG-1, "config[" + section + "]['sensor'] = " + str(config[section]['sensor']))
-        i = int(config[section]['sensor'])
         # if sensor.get_touch_data(i):
           # check if touch is registred to set the led status
-        if sensor.is_new_touch(i):
-          # play sound associated with that touch
+        doMagic = False
+        if config[section]['sensor'].isdigit(): # Only Digits are Touch Sensors.
+          i = int(config[section]['sensor'])
           logging.info("electrode {0} was just touched".format(i))
+          if sensor.is_new_touch(i):
+            doMagic = True
+          elif sensor.is_new_release(i):
+            logging.info("electrode {0} was just released".format(i))
+        
+        if doMagic:
+          # play sound associated with that touch
           if not config[section]['thread'].is_alive():
-            config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section]['led_on_time'],))
+            config[section]['thread'] = threading.Thread(target=sectionWorker, args=(config[section],))
             config[section]['thread'].setName(section)
             config[section]['thread'].start()
-
-        elif sensor.is_new_release(i):
-          logging.info("electrode {0} was just released".format(i))
 
     is_any_sensor_thread_alive = any(config[section]['thread'].is_alive() for section in config.iterkeys() )
 
@@ -174,6 +179,18 @@ def main():
       logger.info("BIG_DOME_PUSHBUTTON_PIN changed from " + str(prv_button) + " to " + str(button))
       GPIO.output(BIG_DOME_LED_PIN, not(button))
       prv_button = button
+      if not button:
+        write_ws281x('fill ' + str(channel) + ',' + \
+                               colors['wht']  + ',' + \
+                               str(config['Nose']['led_start']) + ',' + \
+                               str(config['Nose']['led_length']) + \
+                               '\nrender\n')
+      else:
+        write_ws281x('fill ' + str(channel) + ',' + \
+                               colors['off']  + ',' + \
+                               str(config['Nose']['led_start']) + ',' + \
+                               str(config['Nose']['led_length']) + \
+                               '\nrender\n')
 
     time.sleep(0.01)
 #end of main():
@@ -307,43 +324,42 @@ def write_ws281x(cmd):
     # close needed for ws2812svr to process file handle
 # end of write_ws281x():
 
-def sectionWorker(num = -1):
+def sectionWorker(config):
   section = threading.currentThread().getName()
-  
   logger.debug('Started Thread "' + section + \
-               '" led_on_time = ' + str(config[section]['led_on_time']) + \
-               '" led_start = ' + str(config[section]['led_start']) + \
-               '" led_length = ' + str(config[section]['led_length']) + \
-               '" music_fnpath = ' + str(config[section]['music_fnpath']) \
+               '" led_on_time = ' + str(config['led_on_time']) + \
+               '" led_start = ' + str(config['led_start']) + \
+               '" led_length = ' + str(config['led_length']) + \
+               '" music_fnpath = ' + str(config['music_fnpath']) \
                )
                
   tmp_color = copy.deepcopy(colors)
   if 'off' in tmp_color: del tmp_color['off']
-  if config[section]['led_color'].lower() == 'random' :
+  if config['led_color'].lower() == 'random' :
     # remove 'off', as not to get randomly
     color = tmp_color[random.choice(list(tmp_color))]
   else:
     try:
-      color = tmp_color[config[section]['led_color'].lower()]
+      color = tmp_color[config['led_color'].lower()]
     except:
       color = tmp_color[random.choice(list(tmp_color))]
 
   write_ws281x('fill ' + str(channel) + ',' + \
                          color  + ',' + \
-                         str(config[section]['led_start']) + ',' + \
-                         str(config[section]['led_length']) + \
+                         str(config['led_start']) + ',' + \
+                         str(config['led_length']) + \
                          '\nrender\n')
 
-  if not args.noSound:
-    sound = pygame.mixer.Sound(config[section]['music_fnpath'])
+  if not args.noSound and 'music_fnpath' in config:
+    sound = pygame.mixer.Sound(config['music_fnpath'])
     sound.play()
   
-  time.sleep(int(config[section]['led_on_time']))
+  time.sleep(int(config['led_on_time']))
   
   write_ws281x('fill ' + str(channel) + ',' + \
                          colors['off'] + ',' + \
-                         str(config[section]['led_start']) + ',' + \
-                         str(config[section]['led_length']) + \
+                         str(config['led_start']) + ',' + \
+                         str(config['led_length']) + \
                          '\nrender\n')
 # end of sectionWorker():
 
