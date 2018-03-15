@@ -351,7 +351,7 @@ def sectionWorker(config):
                          str(config['led_length']) + \
                          '\nrender\n')
 
-  if (not args.noSound) and ('music_fnpath' in config):
+  if (not args.noSound) and ('music_fnpath' in config) and (os.path.isfile(config['music_fnpath'])):
     # only play if allowed and valid file is defined.
     sound = pygame.mixer.Sound(config['music_fnpath'])
     if not pygame.mixer.get_busy():
