@@ -229,6 +229,7 @@ def ParseArgs():
   parser.add_argument('--stop', '-s', action='store_true', help='just initialize and stop')
   parser.add_argument('--postDelay', '-p', help='specify the LED delays at startup', type=float, default="1.0")
   parser.add_argument('--noSound', '-n', action='store_true', help='Run with out sound')
+  parser.add_argument('--singleSound', '-S', action='store_true', help='Only play one Sound at a time')
   parser.add_argument('--walkLED', '-L', action='store_true', help='move LED increamentally, with standard input, used for determining LED positions.')
 
   # Read in and parse the command line arguments
@@ -350,10 +351,16 @@ def sectionWorker(config):
                          str(config['led_length']) + \
                          '\nrender\n')
 
-  if not args.noSound and 'music_fnpath' in config:
+  if (not args.noSound) and ('music_fnpath' in config):
+    # only play if allowed and valid file is defined.
     sound = pygame.mixer.Sound(config['music_fnpath'])
-    sound.play()
-  
+    if not pygame.mixer.get_busy():
+      # play when no other is playing.
+      sound.play()
+    elif not args.singleSound:
+      # only play if multi is allowed.
+      sound.play()
+
   time.sleep(int(config['led_on_time']))
   
   write_ws281x('fill ' + str(channel) + ',' + \
